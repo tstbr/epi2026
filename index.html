@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Controle de Validade de EPIs</title>
+    <!-- SheetJS para exportação em Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- jsPDF e AutoTable para exportação em PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.1);
+        }
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .contador-visitas {
+            background-color: #e9ecef;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 14px;
+            color: #495057;
+        }
+        h2, h3 {
+            color: #333;
+            margin: 0;
+        }
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group.full {
+            grid-column: span 2;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 9px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .btn-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        button {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: bold;
+            color: white;
+        }
+        .btn-salvar { background-color: #28a745; }
+        .btn-salvar:hover { background-color: #218838; }
+        .btn-excel { background-color: #17a2b8; }
+        .btn-excel:hover { background-color: #138496; }
+        .btn-pdf { background-color: #dc3545; }
+        .btn-pdf:hover { background-color: #c82333; }
+        .btn-wpp { background-color: #25d366; color: #fff; }
+        .btn-wpp:hover { background-color: #1ebe5d; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+            font-size: 13px;
+        }
+        th {
+            background-color: #007bff;
+            color: white;
+        }
+
+        /* Animações Piscantes */
+        @keyframes piscarVermelho {
+            0% { background-color: #f8d7da; color: #721c24; }
+            50% { background-color: #ff4d4d; color: #ffffff; }
+            100% { background-color: #f8d7da; color: #721c24; }
+        }
+
+        @keyframes piscarAmarelo {
+            0% { background-color: #fff3cd; color: #856404; }
+            50% { background-color: #ffeb3b; color: #000000; }
+            100% { background-color: #fff3cd; color: #856404; }
+        }
+
+        .status-ok {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status-alerta {
+            animation: piscarAmarelo 1s infinite;
+            font-weight: bold;
+        }
+        .status-vencido {
+            animation: piscarVermelho 0.8s infinite;
+            font-weight: bold;
+        }
+
+        .alert-box {
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            display: none;
+            font-weight: bold;
+            text-align: center;
+            border: 2px dashed #333;
+        }
+        .alert-vencido-geral {
+            animation: piscarVermelho 0.8s infinite;
+        }
+        .alert-aviso-geral {
+            animation: piscarAmarelo 1s infinite;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header-top">
+        <h2>Controle de Vencimento de EPIs</h2>
+        <div class="contador-visitas">
+            👁️ Acessos à Página: <span id="contadorVisitas">0</span>
+        </div>
+    </div>
+
+    <!-- Caixa de Alerta Geral no Topo -->
+    <div id="alertaGeral" class="alert-box">
+        ⚠️ <span id="textoAlertaGeral">Atenção! Existem EPIs vencidos ou próximos do vencimento.</span>
+    </div>
+
+    <!-- Formulário de Cadastro -->
+    <div class="form-grid">
+        <div class="form-group">
+            <label for="nomeEmpresa">Empresa:</label>
+            <input type="text" id="nomeEmpresa" placeholder="Ex: Matriz / Filial 01">
+        </div>
+
+        <div class="form-group">
+            <label for="nomeFuncionario">Nome do Funcionário:</label>
+            <input type="text" id="nomeFuncionario" placeholder="Ex: João da Silva">
+        </div>
+
+        <div class="form-group">
+            <label for="matriculaFuncionario">Matrícula:</label>
+            <input type="text" id="matriculaFuncionario" placeholder="Ex: 12345">
+        </div>
+
+        <div class="form-group">
+            <label for="whatsappFuncionario">WhatsApp (com DDD):</label>
+            <input type="text" id="whatsappFuncionario" placeholder="Ex: 48999999999">
+        </div>
+
+        <div class="form-group">
+            <label for="nomeEpi">EPI (Ex: Luva):</label>
+            <input type="text" id="nomeEpi" value="Luva de Proteção" placeholder="Ex: Luva, Óculos">
+        </div>
+
+        <div class="form-group">
+            <label for="dataEntrega">Data de Entrega:</label>
+            <input type="date" id="dataEntrega">
+        </div>
+
+        <div class="form-group full">
+            <label for="validadeOpcao">Validade do EPI:</label>
+            <select id="validadeOpcao">
+                <option value="30">30 Dias</option>
+                <option value="90">3 Meses (90 Dias)</option>
+                <option value="120">4 Meses (120 Dias)</option>
+                <option value="180">6 Meses (180 Dias)</option>
+                <option value="365">12 Meses (365 Dias)</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="btn-group">
+        <button class="btn-salvar" onclick="salvarEPI()">Cadastrar / Salvar EPI</button>
+        <button class="btn-excel" onclick="exportarExcel()">Exportar Excel (.xlsx)</button>
+        <button class="btn-pdf" onclick="exportarPDF()">Exportar PDF (.pdf)</button>
+    </div>
+
+    <hr style="margin: 30px 0;">
+
+    <h3>Lista de EPIs Entregues</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Empresa</th>
+                <th>Funcionário</th>
+                <th>Matrícula</th>
+                <th>WhatsApp</th>
+                <th>EPI</th>
+                <th>Entrega</th>
+                <th>Vencimento</th>
+                <th>Status</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody id="tabelaEpi">
+            <!-- Dados via JS -->
+        </tbody>
+    </table>
+</div>
+
+<script>
+    // Contador de Visitas usando localStorage
+    function gerenciarContadorVisitas() {
+        let visitas = localStorage.getItem('contadorVisitasEpi');
+        if (!visitas) {
+            visitas = 1;
+        } else {
+            visitas = parseInt(visitas) + 1;
+        }
+        localStorage.setItem('contadorVisitasEpi', visitas);
+        document.getElementById('contadorVisitas').innerText = visitas;
+    }
+
+    document.getElementById('dataEntrega').valueAsDate = new Date();
+
+    function carregarDados() {
+        let dados = JSON.parse(localStorage.getItem('bancoEpiFinal'));
+        if (!dados || dados.length === 0) {
+            let hoje = new Date();
+            dados = [
+                {
+                    empresa: "Matriz",
+                    funcionario: "Carlos Souza",
+                    matricula: "00987",
+                    whatsapp: "5548999887766",
+                    nomeEpi: "Luva de Proteção",
+                    dataEntrega: hoje.toISOString().split('T')[0],
+                    validadeDias: 30
+                }
+            ];
+            localStorage.setItem('bancoEpiFinal', JSON.stringify(dados));
+        }
+        return dados;
+    }
+
+    function salvarEPI() {
+        const empresa = document.getElementById('nomeEmpresa').value;
+        const funcionario = document.getElementById('nomeFuncionario').value;
+        const matricula = document.getElementById('matriculaFuncionario').value;
+        const whatsapp = document.getElementById('whatsappFuncionario').value;
+        const nomeEpi = document.getElementById('nomeEpi').value;
+        const dataEntrega = document.getElementById('dataEntrega').value;
+        const validadeDias = parseInt(document.getElementById('validadeOpcao').value);
+
+        if (!empresa || !funcionario || !matricula || !whatsapp || !nomeEpi || !dataEntrega) {
+            alert('Por favor, preencha todos os campos!');
+            return;
+        }
+
+        let dados = carregarDados();
+        dados.push({ empresa, funcionario, matricula, whatsapp, nomeEpi, dataEntrega, validadeDias });
+        localStorage.setItem('bancoEpiFinal', JSON.stringify(dados));
+
+        document.getElementById('nomeEmpresa').value = '';
+        document.getElementById('nomeFuncionario').value = '';
+        document.getElementById('matriculaFuncionario').value = '';
+        document.getElementById('whatsappFuncionario').value = '';
+        renderizarTabela();
+        alert('EPI cadastrado com sucesso!');
+    }
+
+    function excluirEPI(index) {
+        let dados = carregarDados();
+        dados.splice(index, 1);
+        localStorage.setItem('bancoEpiFinal', JSON.stringify(dados));
+        renderizarTabela();
+    }
+
+    function enviarWhatsApp(whatsapp, funcionario, epi, vencimentoStr, statusTipo) {
+        let numeroLimpo = whatsapp.replace(/\D/g, '');
+        if (numeroLimpo.length <= 11) {
+            numeroLimpo = '55' + numeroLimpo;
+        }
+
+        let mensagem = `Olá, *${funcionario}*!\n\nAtenção: O seu EPI (*${epi}*) está com o status: *${statusTipo}*.\nData de Vencimento: *${vencimentoStr}*.\n\nPor favor, procure o setor de segurança para a substituição.`;
+        
+        let urlWpp = `https://api.whatsapp.com/send?phone=${numeroLimpo}&text=${encodeURIComponent(mensagem)}`;
+        window.open(urlWpp, '_blank');
+    }
+
+    function renderizarTabela() {
+        const tabela = document.getElementById('tabelaEpi');
+        const alertaGeral = document.getElementById('alertaGeral');
+        tabela.innerHTML = '';
+        
+        let dados = carregarDados();
+        let temVencido = false;
+        let temAlerta = false;
+        let hoje = new Date();
+        hoje.setHours(0,0,0,0);
+
+        dados.forEach((epi, index) => {
+            let entrega = new Date(epi.dataEntrega + 'T00:00:00');
+            let vencimento = new Date(entrega);
+            vencimento.setDate(entrega.getDate() + epi.validadeDias);
+
+            let diffTime = vencimento - hoje;
+            let diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+            let statusClass = '';
+            let statusTexto = '';
+            let tipoAlertaWpp = '';
+
+            if (diffDays < 0) {
+                statusClass = 'status-vencido';
+                statusTexto = `VENCIDO há ${Math.abs(diffDays)} dia(s)!`;
+                tipoAlertaWpp = 'VENCIDO';
+                temVencido = true;
+            } else if (diffDays <= 7) {
+                statusClass = 'status-alerta';
+                statusTexto = `Vence em ${diffDays} dia(s) (Alerta!)`;
+                tipoAlertaWpp = 'PRÓXIMO DO VENCIMENTO';
+                temAlerta = true;
+            } else {
+                statusClass = 'status-ok';
+                statusTexto = `No prazo (${diffDays} dias restantes)`;
+            }
+
+            let dataEntregaF = entrega.toLocaleDateString('pt-BR');
+            let dataVencimentoF = vencimento.toLocaleDateString('pt-BR');
+
+            let btnWppHtml = '';
+            if (diffDays <= 7) {
+                btnWppHtml = `<button onclick="enviarWhatsApp('${epi.whatsapp}', '${epi.funcionario}', '${epi.nomeEpi}', '${dataVencimentoF}', '${tipoAlertaWpp}')" class="btn-wpp" style="padding: 4px 6px; font-size: 11px; margin-right: 3px;" title="Enviar WhatsApp">📱 Wpp</button>`;
+            }
+
+            let linha = `
+                <tr>
+                    <td>${epi.empresa}</td>
+                    <td>${epi.funcionario}</td>
+                    <td>${epi.matricula}</td>
+                    <td>${epi.whatsapp}</td>
+                    <td>${epi.nomeEpi}</td>
+                    <td>${dataEntregaF}</td>
+                    <td>${dataVencimentoF}</td>
+                    <td class="${statusClass}">${statusTexto}</td>
+                    <td>
+                        ${btnWppHtml}
+                        <button onclick="excluirEPI(${index})" style="background-color: #dc3545; padding: 4px 6px; font-size: 11px; color:white;">Excluir</button>
+                    </td>
+                </tr>
+            `;
+            tabela.innerHTML += linha;
+        });
+
+        if (temVencido) {
+            alertaGeral.style.display = 'block';
+            alertaGeral.className = 'alert-box alert-vencido-geral';
+            document.getElementById('textoAlertaGeral').innerText = 'ATENÇÃO CRÍTICA: Existem EPIs VENCIDOS cadastrados!';
+        } else if (temAlerta) {
+            alertaGeral.style.display = 'block';
+            alertaGeral.className = 'alert-box alert-aviso-geral';
+            document.getElementById('textoAlertaGeral').innerText = 'ALERTA: Existem EPIs próximos do vencimento (menos de 7 dias)!';
+        } else {
+            alertaGeral.style.display = 'none';
+        }
+    }
+
+    function exportarExcel() {
+        let dados = carregarDados();
+        if (dados.length === 0) {
+            alert('Não há dados para exportar!');
+            return;
+        }
+
+        let dadosFormatados = dados.map(epi => {
+            let entrega = new Date(epi.dataEntrega + 'T00:00:00');
+            let vencimento = new Date(entrega);
+            vencimento.setDate(entrega.getDate() + epi.validadeDias);
+            let hoje = new Date();
+            hoje.setHours(0,0,0,0);
+            let diffDays = Math.ceil((vencimento - hoje) / (1000 * 60 * 60 * 24));
+            
+            let status = diffDays < 0 ? 'VENCIDO' : (diffDays <= 7 ? 'PRÓXIMO DO VENCIMENTO' : 'NO PRAZO');
+
+            return {
+                "Empresa": epi.empresa,
+                "Funcionário": epi.funcionario,
+                "Matrícula": epi.matricula,
+                "WhatsApp": epi.whatsapp,
+                "EPI": epi.nomeEpi,
+                "Data Entrega": entrega.toLocaleDateString('pt-BR'),
+                "Data Vencimento": vencimento.toLocaleDateString('pt-BR'),
+                "Status": status
+            };
+        });
+
+        let worksheet = XLSX.utils.json_to_sheet(dadosFormatados);
+        let workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Controle EPIs");
+        XLSX.writeFile(workbook, "Controle_EPIs_Empresa.xlsx");
+    }
+
+    function exportarPDF() {
+        let dados = carregarDados();
+        if (dados.length === 0) {
+            alert('Não há dados para exportar!');
+            return;
+        }
+
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('landscape');
+
+        doc.setFontSize(16);
+        doc.text("Relatório de Controle de Vencimento de EPIs", 14, 20);
+
+        let colunas = ["Empresa", "Funcionário", "Matrícula", "WhatsApp", "EPI", "Entrega", "Vencimento", "Status"];
+        let linhas = [];
+
+        let hoje = new Date();
+        hoje.setHours(0,0,0,0);
+
+        dados.forEach(epi => {
+            let entrega = new Date(epi.dataEntrega + 'T00:00:00');
+            let vencimento = new Date(entrega);
+            vencimento.setDate(entrega.getDate() + epi.validadeDias);
+            let diffDays = Math.ceil((vencimento - hoje) / (1000 * 60 * 60 * 24));
+            let status = diffDays < 0 ? 'VENCIDO' : (diffDays <= 7 ? 'ALERTA' : 'NO PRAZO');
+
+            linhas.push([
+                epi.empresa,
+                epi.funcionario,
+                epi.matricula,
+                epi.whatsapp,
+                epi.nomeEpi,
+                entrega.toLocaleDateString('pt-BR'),
+                vencimento.toLocaleDateString('pt-BR'),
+                status
+            ]);
+        });
+
+        doc.autoTable({
+            head: [colunas],
+            body: linhas,
+            startY: 28,
+            theme: 'grid',
+            headStyles: { fillColor: [0, 123, 255] },
+            styles: { fontSize: 8 }
+        });
+
+        doc.save("Controle_EPIs_Empresa.pdf");
+    }
+
+    // Inicialização ao carregar a página
+    window.onload = function() {
+        gerenciarContadorVisitas();
+        renderizarTabela();
+    };
+</script>
+
+</body>
+</html>
